@@ -1,0 +1,1722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+  <title>Got Five! — Multiplayer Logic & Deduction Game</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+      color: #0f172a;
+      min-height: 100vh;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .tile-shadow {
+      box-shadow: 0 4px 0 rgba(15, 23, 42, 0.18), 0 6px 12px rgba(15, 23, 42, 0.08);
+    }
+    .tile-shadow-sm {
+      box-shadow: 0 2px 0 rgba(15, 23, 42, 0.15), 0 3px 6px rgba(15, 23, 42, 0.06);
+    }
+    .notch-slot {
+      transition: all 0.2s ease;
+    }
+    .scratch-cell {
+      transition: transform 0.12s ease, opacity 0.15s ease, background-color 0.15s ease;
+      user-select: none;
+      touch-action: manipulation;
+    }
+    .scratch-cell:active {
+      transform: scale(0.93);
+    }
+    .crossed-out {
+      opacity: 0.28;
+      position: relative;
+    }
+    .crossed-out::after {
+      content: "✕";
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      font-weight: 900;
+      color: #dc2626;
+      text-shadow: 0 1px 2px rgba(255,255,255,0.95);
+    }
+    .circled-cell {
+      outline: 3px solid #4f46e5;
+      outline-offset: 1px;
+      transform: translateY(-2px);
+    }
+  </style>
+</head>
+<body class="p-2.5 sm:p-4 md:p-5 pb-20 lg:pb-6">
+  <div class="max-w-6xl mx-auto space-y-3 sm:space-y-4">
+
+    <!-- Top Header: Brand, Auto Player ID Badge, Room Status & Controls -->
+    <header class="bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5 sm:gap-3">
+          <div class="w-10 h-10 sm:w-11 sm:h-11 shrink-0 rounded-xl bg-gradient-to-br from-indigo-600 via-pink-500 to-amber-500 flex items-center justify-center font-extrabold text-lg sm:text-xl text-white shadow-sm">
+            G5!
+          </div>
+          <div>
+            <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <h1 class="text-base sm:text-xl font-extrabold tracking-tight text-slate-900">Got Five! — Live Multiplayer</h1>
+              <span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">Mobile • Tablet • Desktop</span>
+            </div>
+            <p class="text-xs text-slate-600 hidden sm:block">GitHub Pages &amp; P2P Ready • Deduce your 5 hidden tiles before time or opponents run out!</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Player ID Pill + Action Buttons -->
+      <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+        <div class="flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-1.5">
+          <span class="text-[10px] sm:text-[11px] font-bold uppercase text-slate-500">ID:</span>
+          <span id="playerIdBadge" class="text-xs sm:text-sm font-extrabold font-mono text-indigo-700">PLR-0000</span>
+          <button id="btnRegenId" type="button" class="ml-1 text-xs font-bold text-slate-500 hover:text-indigo-600 transition" title="Generate a fresh random Player ID">
+            🎲 New ID
+          </button>
+        </div>
+
+        <button id="btnOpenLobby" type="button" class="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition shadow-sm flex items-center gap-1">
+          <span>🌐</span> Rooms &amp; Timers
+        </button>
+        <button id="btnRules" type="button" class="px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-semibold text-slate-700 transition flex items-center gap-1">
+          <span>📖</span> Rules
+        </button>
+        <button id="btnMute" type="button" class="px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-semibold text-slate-700 transition flex items-center gap-1">
+          <span id="muteIcon">🔊</span> <span id="muteLabel">Sound On</span>
+        </button>
+        <button id="btnNewGame" type="button" class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow-sm">
+          ↻ New Game
+        </button>
+      </div>
+    </header>
+
+    <!-- Mobile & Portrait-Tablet Quick View Switcher Bar -->
+    <nav class="lg:hidden bg-white border border-slate-200 rounded-2xl p-1.5 grid grid-cols-4 gap-1 shadow-sm">
+      <button type="button" data-mobile-tab="all" class="mobile-view-btn py-2 px-2 rounded-xl text-xs font-extrabold bg-indigo-600 text-white transition">
+        📱 All View
+      </button>
+      <button type="button" data-mobile-tab="table" class="mobile-view-btn py-2 px-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition">
+        🎲 Table
+      </button>
+      <button type="button" data-mobile-tab="sheet" class="mobile-view-btn py-2 px-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition">
+        📝 Sheet
+      </button>
+      <button type="button" data-mobile-tab="lobby" class="mobile-view-btn py-2 px-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition">
+        🌐 Room
+      </button>
+    </nav>
+
+    <!-- Collapsible Multiplayer Room & Per-Player Timer Panel -->
+    <section id="lobbyPanel" class="bg-white border-2 border-indigo-200 rounded-2xl p-3.5 sm:p-4 shadow-sm space-y-3.5">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2.5">
+        <div>
+          <h2 class="text-sm sm:text-base font-extrabold text-slate-900 flex flex-wrap items-center gap-2">
+            <span>🌐</span> Multiplayer Room Lobby &amp; Individual Turn Timers
+            <span id="netModePill" class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+              P2P WebRTC + Invite Link Ready
+            </span>
+          </h2>
+          <p class="text-xs text-slate-600">Create a room and share your Room Code or 1-Click Invite Link with friends on mobile, tablet, or desktop!</p>
+        </div>
+        <button id="btnToggleLobby" type="button" class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700">
+          Hide Lobby ▲
+        </button>
+      </div>
+
+      <div id="lobbyBody" class="grid grid-cols-1 md:grid-cols-12 gap-3.5">
+        <!-- Create Room Configuration (7 cols) -->
+        <div class="md:col-span-7 bg-slate-50 border border-slate-200 rounded-xl p-3 sm:p-3.5 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="text-xs font-extrabold uppercase tracking-wider text-indigo-700">1. Create / Configure Room</span>
+            <label class="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer">
+              <input id="chkFillBots" type="checkbox" checked class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4" />
+              Fill empty seats with AI Bots
+            </label>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div>
+              <label for="selPlayerCount" class="block text-xs font-bold text-slate-700 mb-1">Number of Players (2–4)</label>
+              <select id="selPlayerCount" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm font-semibold text-slate-800">
+                <option value="2">2 Players (Head-to-Head)</option>
+                <option value="3">3 Players (Trio Table)</option>
+                <option value="4">4 Players (Full Party)</option>
+              </select>
+            </div>
+            <div>
+              <label for="inpNickname" class="block text-xs font-bold text-slate-700 mb-1">Your Display Label (Optional)</label>
+              <input id="inpNickname" type="text" maxlength="16" placeholder="Uses your Player ID" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm font-semibold text-slate-800" />
+            </div>
+          </div>
+
+          <!-- Individual Per-Player Turn Timing Inputs -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-bold text-slate-700">⏱️ Individual Turn Timer per Player (Seconds)</span>
+              <span class="text-[11px] text-slate-500">Custom time per seat (10–300s)</span>
+            </div>
+            <div id="playerTimerInputs" class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div class="bg-white border border-slate-200 rounded-lg p-2">
+                <label for="timerP1" class="block text-[10px] font-bold uppercase text-indigo-700">Seat 1 (Host/You)</label>
+                <input id="timerP1" type="number" inputmode="numeric" min="10" max="300" value="45" class="w-full mt-1 text-center font-extrabold text-sm rounded border border-slate-300 py-1.5 text-slate-900" />
+              </div>
+              <div class="bg-white border border-slate-200 rounded-lg p-2">
+                <label for="timerP2" class="block text-[10px] font-bold uppercase text-pink-600">Seat 2 Timer (s)</label>
+                <input id="timerP2" type="number" inputmode="numeric" min="10" max="300" value="45" class="w-full mt-1 text-center font-extrabold text-sm rounded border border-slate-300 py-1.5 text-slate-900" />
+              </div>
+              <div class="bg-white border border-slate-200 rounded-lg p-2">
+                <label for="timerP3" class="block text-[10px] font-bold uppercase text-emerald-600">Seat 3 Timer (s)</label>
+                <input id="timerP3" type="number" inputmode="numeric" min="10" max="300" value="60" class="w-full mt-1 text-center font-extrabold text-sm rounded border border-slate-300 py-1.5 text-slate-900" />
+              </div>
+              <div class="bg-white border border-slate-200 rounded-lg p-2">
+                <label for="timerP4" class="block text-[10px] font-bold uppercase text-orange-600">Seat 4 Timer (s)</label>
+                <input id="timerP4" type="number" inputmode="numeric" min="10" max="300" value="60" class="w-full mt-1 text-center font-extrabold text-sm rounded border border-slate-300 py-1.5 text-slate-900" />
+              </div>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2 pt-1">
+            <button id="btnCreateRoom" type="button" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs sm:text-sm shadow-sm transition">
+              ➕ Create Room &amp; Start Table
+            </button>
+            <button id="btnShareInvite" type="button" class="px-3.5 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-indigo-700 border border-indigo-200 font-bold text-xs sm:text-sm transition">
+              🔗 Copy Invite Link
+            </button>
+            <span id="roomCreatedFeedback" class="text-xs font-semibold text-emerald-700"></span>
+          </div>
+        </div>
+
+        <!-- Join Existing Room & Active Room Roster (5 cols) -->
+        <div class="md:col-span-5 bg-slate-50 border border-slate-200 rounded-xl p-3 sm:p-3.5 flex flex-col justify-between space-y-3">
+          <div class="space-y-2">
+            <span class="text-xs font-extrabold uppercase tracking-wider text-indigo-700">2. Join Friend's Room Code</span>
+            <div class="flex items-center gap-2">
+              <input id="inpJoinCode" type="text" maxlength="12" placeholder="e.g. G5-4829" class="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs sm:text-sm font-mono font-bold uppercase text-slate-900" />
+              <button id="btnJoinRoom" type="button" class="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs sm:text-sm transition">
+                Join Room
+              </button>
+            </div>
+            <p id="joinStatusText" class="text-[11px] text-slate-500">
+              Enter a friend's code or open their `?room=G5-XXXX` invite link on any phone, tablet, or browser.
+            </p>
+          </div>
+
+          <!-- Active Room Box -->
+          <div class="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-500">ACTIVE ROOM CODE:</span>
+              <div class="flex items-center gap-1.5">
+                <span id="activeRoomCode" class="font-mono font-extrabold text-sm text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded border border-indigo-200">LOCAL-SOLO</span>
+                <button id="btnCopyRoom" type="button" class="text-xs font-semibold px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700">
+                  Copy
+                </button>
+              </div>
+            </div>
+            <div id="roomRosterList" class="space-y-1 text-xs text-slate-700"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Turn Banner + Live Countdown Clock -->
+    <section class="bg-white border-2 border-indigo-200 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+      <div class="flex items-center gap-2.5 sm:gap-3">
+        <div id="turnBadge" class="px-3 py-1.5 rounded-xl bg-amber-400 text-slate-950 font-extrabold text-xs sm:text-sm whitespace-nowrap">
+          TURN 1 • STEP 1
+        </div>
+        <div>
+          <p id="statusHeadline" class="font-bold text-xs sm:text-base text-slate-900">
+            Step 1: Draw a face-down tile from any colored supply stack!
+          </p>
+          <p id="statusSubtext" class="text-[11px] sm:text-xs text-slate-600">
+            Flipping a supply tile adds shared information to the table and unlocks your clue action.
+          </p>
+        </div>
+      </div>
+
+      <!-- Countdown Clock + Shout Got Five Button -->
+      <div class="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2.5">
+        <div class="flex items-center gap-2 bg-slate-100 border border-slate-200 rounded-xl px-3 py-1.5">
+          <span class="text-xs font-bold text-slate-600">⏱️ Clock:</span>
+          <span id="turnTimerDisplay" class="font-mono font-extrabold text-sm sm:text-base text-indigo-700">45s</span>
+          <button id="btnPauseTimer" type="button" class="text-xs font-bold px-2 py-0.5 rounded bg-white hover:bg-slate-200 border border-slate-300 text-slate-700" title="Pause or Resume Turn Timer">
+            ⏸️
+          </button>
+        </div>
+
+        <button id="btnDeclareModal" type="button" class="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-extrabold text-xs sm:text-sm shadow-sm transition transform hover:scale-105">
+          ✋ Shout "GOT FIVE!"
+        </button>
+      </div>
+    </section>
+
+    <!-- Main 2-Column Responsive Layout: Left = Stands & Table, Right = Dry-Erase Deduction Board -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+      <!-- Left Column (7 cols): Opponent Stands, Center Supply & Pool, Your Stand -->
+      <div id="tableColumn" class="lg:col-span-7 space-y-3.5 sm:space-y-4">
+
+        <!-- Opponents' Stands (Supports 1 to 3 Opponents in 2-4 Player Rooms!) -->
+        <div class="bg-white border border-slate-200 rounded-2xl p-3 sm:p-3.5 shadow-sm space-y-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-extrabold uppercase tracking-wider text-slate-700">👀 Other Players' Stands (Visible to You)</span>
+            </div>
+            <div id="opponentTabs" class="flex items-center gap-1.5 flex-wrap"></div>
+          </div>
+          <div id="opponentStand" class="grid grid-cols-5 gap-1.5 sm:gap-3"></div>
+        </div>
+
+        <!-- Center Table: 5 Color Supply Stacks + Face-Up Pool -->
+        <div class="bg-white border border-slate-200 rounded-2xl p-3 sm:p-3.5 space-y-3 shadow-sm">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 class="text-xs font-extrabold uppercase tracking-wider text-slate-800">1. Supply Stacks (Tap a Color to Flip a Tile)</h2>
+              <p class="text-[11px] sm:text-xs text-slate-500">Each color has 12 unique tiles (every 5th number from 1 to 60).</p>
+            </div>
+            <span id="supplyRemainingBadge" class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">45 left in supply</span>
+          </div>
+
+          <div id="supplyStacks" class="grid grid-cols-5 gap-1.5 sm:gap-3"></div>
+
+          <div class="pt-2 border-t border-slate-200">
+            <div class="flex items-center justify-between mb-2">
+              <h2 class="text-xs font-extrabold uppercase tracking-wider text-slate-800">2. Available Face-Up Pool (Tap 1 for a Clue)</h2>
+              <span id="poolCountBadge" class="text-xs text-slate-500">5 face-up tiles</span>
+            </div>
+            <div id="centerPool" class="flex flex-wrap gap-2 min-h-[4.25rem] p-2.5 rounded-xl bg-slate-50 border border-slate-200 items-center"></div>
+          </div>
+
+          <!-- Clue Action Bar -->
+          <div id="clueActionPanel" class="p-3 rounded-xl bg-indigo-50/90 border border-indigo-200 space-y-2.5">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <span id="selectedTilePrompt" class="text-xs sm:text-sm font-semibold text-indigo-950">
+                First flip a tile from the Supply Stacks above.
+              </span>
+              <div class="flex items-center gap-2 flex-wrap">
+                <button id="btnSortClue" type="button" disabled class="flex-1 sm:flex-none px-3 py-2 rounded-lg bg-sky-500 hover:bg-sky-400 disabled:opacity-40 disabled:pointer-events-none text-slate-950 font-bold text-xs transition shadow-sm">
+                  ↕️ Sort Clue (Place in Notch)
+                </button>
+                <button id="btnCompareMode" type="button" disabled class="flex-1 sm:flex-none px-3 py-2 rounded-lg bg-fuchsia-500 hover:bg-fuchsia-400 disabled:opacity-40 disabled:pointer-events-none text-white font-bold text-xs transition shadow-sm">
+                  •• Compare Dots with My Tile
+                </button>
+              </div>
+            </div>
+            <!-- Slot selector for Compare Clue -->
+            <div id="compareSlotSelector" class="hidden pt-2 border-t border-indigo-200 flex flex-wrap items-center justify-between gap-2">
+              <span class="text-xs text-indigo-900 font-semibold">Which of your 5 hidden tiles do you want to compare dots with?</span>
+              <div class="grid grid-cols-5 gap-1.5 w-full sm:w-auto">
+                <button type="button" data-compare-slot="0" class="compare-slot-btn px-2.5 py-1.5 rounded-lg bg-white hover:bg-fuchsia-500 hover:text-white text-slate-800 text-xs font-bold border border-fuchsia-300 transition">Tile #1</button>
+                <button type="button" data-compare-slot="1" class="compare-slot-btn px-2.5 py-1.5 rounded-lg bg-white hover:bg-fuchsia-500 hover:text-white text-slate-800 text-xs font-bold border border-fuchsia-300 transition">Tile #2</button>
+                <button type="button" data-compare-slot="2" class="compare-slot-btn px-2.5 py-1.5 rounded-lg bg-white hover:bg-fuchsia-500 hover:text-white text-slate-800 text-xs font-bold border border-fuchsia-300 transition">Tile #3</button>
+                <button type="button" data-compare-slot="3" class="compare-slot-btn px-2.5 py-1.5 rounded-lg bg-white hover:bg-fuchsia-500 hover:text-white text-slate-800 text-xs font-bold border border-fuchsia-300 transition">Tile #4</button>
+                <button type="button" data-compare-slot="4" class="compare-slot-btn px-2.5 py-1.5 rounded-lg bg-white hover:bg-fuchsia-500 hover:text-white text-slate-800 text-xs font-bold border border-fuchsia-300 transition">Tile #5</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Your Stand (5 Hidden Tiles + 6 Sorting Notches + Compare History) -->
+        <div class="bg-white border-2 border-amber-400 rounded-2xl p-3 sm:p-3.5 space-y-3 shadow-sm">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span class="text-xs font-extrabold uppercase tracking-wider text-amber-700">🔒 Your Mystery Stand (5 Hidden Numbers)</span>
+              <p class="text-[11px] sm:text-xs text-slate-600">You see the backs (colors) of your tiles, sorted smallest (left) to largest (right).</p>
+            </div>
+            <span class="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300">
+              Smallest ➔ Largest
+            </span>
+          </div>
+
+          <!-- 5 Mystery Tiles Row -->
+          <div id="playerStand" class="grid grid-cols-5 gap-1.5 sm:gap-3"></div>
+
+          <!-- 6 Sorting Notches Row -->
+          <div class="pt-2 border-t border-slate-200">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[11px] font-bold uppercase tracking-wider text-sky-700">↕️ Sorting Zone (6 Notches Around Your 5 Tiles)</span>
+              <span class="text-[11px] text-slate-500 hidden sm:inline">Shows where sorted clue tiles fall on your number line</span>
+            </div>
+            <div id="sortingNotches" class="grid grid-cols-3 sm:grid-cols-6 gap-1.5 sm:gap-2"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right Column (5 cols): Interactive Dry-Erase Deduction Board -->
+      <div id="sheetColumn" class="lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-3 sm:p-3.5 flex flex-col justify-between space-y-3 shadow-sm">
+        <div class="space-y-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 class="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+                <span>📝</span> Dry-Erase Deduction Sheet
+              </h2>
+              <p class="text-xs text-slate-600">Tap once to cross off (<span class="text-red-600 font-bold">✕</span>), twice to circle (<span class="text-indigo-600 font-bold">◯</span>), thrice to clear.</p>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <button id="btnAutoCrossPublic" type="button" class="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold transition" title="Automatically cross off visible tiles on Opponents' Stands, Center Pool, and Clues">
+                ⚡ Cross Off Visible
+              </button>
+              <button id="btnSmartHint" type="button" class="px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 text-xs font-bold transition" title="Cross off numbers ruled out by your Sort & Compare clues">
+                💡 Auto-Deduce
+              </button>
+              <button id="btnClearBoard" type="button" class="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold transition">
+                Erase All
+              </button>
+            </div>
+          </div>
+
+          <!-- Quick Legend for Colors & Dots -->
+          <div class="p-2 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-700 flex flex-wrap items-center justify-between gap-2">
+            <span><strong>Color Rule:</strong> Each column is 1 color (every 5th number).</span>
+            <span><strong>Dots:</strong> <span class="text-slate-950 font-black">•</span> (1), <span class="text-slate-950 font-black">••</span> (2), <span class="text-slate-950 font-black">•••</span> (3)</span>
+          </div>
+
+          <!-- 60-Tile Grid (12 rows x 5 color columns) -->
+          <div id="deductionGrid" class="grid grid-cols-5 gap-1.5 max-h-[440px] overflow-y-auto pr-0.5"></div>
+        </div>
+
+        <!-- Clue Log / History -->
+        <div class="pt-2 border-t border-slate-200">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500">📜 Room &amp; Clue Log</span>
+            <span id="clueCountLabel" class="text-xs text-slate-500">0 clues asked</span>
+          </div>
+          <div id="clueLog" class="text-xs text-slate-700 space-y-1 max-h-28 overflow-y-auto bg-slate-50 rounded-xl p-2.5 border border-slate-200">
+            <p class="text-slate-400 italic">No clues asked yet. Flip a supply tile to start!</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- "GOT FIVE!" Final Guess Modal -->
+  <div id="declareModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden items-center justify-center p-3 sm:p-4">
+    <div class="bg-white border-2 border-amber-400 rounded-2xl max-w-lg w-full p-4 sm:p-5 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base sm:text-lg font-extrabold text-slate-900">✋ Shout "GOT FIVE!" — Enter Your 5 Numbers</h3>
+        <button id="btnCloseDeclare" type="button" class="text-slate-400 hover:text-slate-700 text-lg font-bold px-2">✕</button>
+      </div>
+      <p class="text-xs sm:text-sm text-slate-600">
+        Enter the exact number (1–60) for each of your 5 hidden tiles from smallest to largest. Remember: in official <em>Got Five!</em> rules, a single wrong number eliminates you!
+      </p>
+
+      <div id="guessInputsContainer" class="grid grid-cols-5 gap-2"></div>
+
+      <div id="guessFeedback" class="hidden p-3 rounded-xl text-xs sm:text-sm font-semibold"></div>
+
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+        <button id="btnCancelDeclare" type="button" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs sm:text-sm font-semibold text-slate-700">
+          Keep Deducing
+        </button>
+        <button id="btnSubmitGuess" type="button" class="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-extrabold text-xs sm:text-sm shadow-md">
+          Confirm My 5 Numbers!
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rules Modal -->
+  <div id="rulesModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden items-center justify-center p-3 sm:p-4">
+    <div class="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-4 sm:p-5 space-y-3.5 shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base sm:text-lg font-extrabold text-slate-900">📖 How to Play Got Five!</h3>
+        <button id="btnCloseRules" type="button" class="text-slate-400 hover:text-slate-700 text-lg font-bold px-2">✕</button>
+      </div>
+      <div class="text-xs sm:text-sm text-slate-600 space-y-2.5 leading-relaxed">
+        <p><strong>Goal:</strong> Deduce the 5 hidden numbers on your stand! You have 1 tile of each of the 5 colors, arranged in <strong>ascending order</strong> from left to right.</p>
+        <p><strong>The 60 Tiles:</strong> Numbers 1 to 60 cycle through the 5 colors (Blue ends in 1/6, Pink in 2/7, Yellow in 3/8, Green in 4/9, Orange in 5/0). Each tile also has <strong>1, 2, or 3 dots</strong>.</p>
+        <p><strong>Multiplayer &amp; Turn Timers:</strong> Every visitor gets an automatic random <strong>Player ID</strong>. Create a room for 2–4 players, customize each seat's turn timer, and tap <strong>🔗 Copy Invite Link</strong> to invite friends on any phone, tablet, or computer!</p>
+        <p><strong>On Your Turn:</strong></p>
+        <ol class="list-decimal list-inside space-y-1 text-slate-700">
+          <li><strong>Reveal a Tile:</strong> Tap any colored Supply Stack to flip 1 tile face-up into the Center Pool.</li>
+          <li><strong>Ask for a Clue:</strong> Pick any 1 tile from the Face-Up Pool and choose either:
+            <ul class="list-disc list-inside ml-4 mt-1 text-slate-600">
+              <li><strong>↕️ Sort:</strong> Places that tile into one of the 6 notches around your stand, showing where its number fits among yours.</li>
+              <li><strong>•• Compare:</strong> Asks if that tile has the <em>same number of dots</em> (1, 2, or 3) as one of your 5 hidden tiles.</li>
+            </ul>
+          </li>
+        </ol>
+      </div>
+      <div class="flex justify-end pt-2 border-t border-slate-200">
+        <button id="btnGotItRules" type="button" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm">
+          Got It, Let's Play!
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // 1. GAME CONSTANTS & TILE GENERATOR (60 Unique Tiles, 5 Colors, 1-3 Dots)
+    // =========================================================================
+    const COLORS = [
+      { id: 'blue',   name: 'Blue',   bg: 'bg-sky-400',     border: 'border-sky-600',     text: 'text-slate-950', badge: 'bg-sky-100 text-sky-800 border-sky-300',     hex: '#38bdf8' },
+      { id: 'pink',   name: 'Pink',   bg: 'bg-pink-400',    border: 'border-pink-600',    text: 'text-slate-950', badge: 'bg-pink-100 text-pink-800 border-pink-300',   hex: '#f472b6' },
+      { id: 'yellow', name: 'Yellow', bg: 'bg-amber-300',   border: 'border-amber-500',   text: 'text-slate-950', badge: 'bg-amber-100 text-amber-900 border-amber-300', hex: '#fcd34d' },
+      { id: 'green',  name: 'Green',  bg: 'bg-emerald-400', border: 'border-emerald-600', text: 'text-slate-950', badge: 'bg-emerald-100 text-emerald-800 border-emerald-300', hex: '#34d399' },
+      { id: 'orange', name: 'Orange', bg: 'bg-orange-400',  border: 'border-orange-600',  text: 'text-slate-950', badge: 'bg-orange-100 text-orange-800 border-orange-300', hex: '#fb923c' }
+    ];
+
+    function getTileMeta(num) {
+      const colorIndex = (num - 1) % 5;
+      const rowInColor = Math.floor((num - 1) / 5);
+      const dots = (rowInColor % 3) + 1;
+      return {
+        num,
+        colorIndex,
+        color: COLORS[colorIndex],
+        dots,
+        dotsStr: '•'.repeat(dots)
+      };
+    }
+
+    // =========================================================================
+    // 2. AUTO-GENERATED RANDOM PLAYER ID
+    // =========================================================================
+    let myPlayerId = 'PLR-0000';
+
+    function generateRandomPlayerId() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let code = 'PLR-';
+      for (let i = 0; i < 4; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return code;
+    }
+
+    function initPlayerIdentity() {
+      try {
+        const saved = sessionStorage.getItem('got5_player_id');
+        if (saved) {
+          myPlayerId = saved;
+        } else {
+          myPlayerId = generateRandomPlayerId();
+          sessionStorage.setItem('got5_player_id', myPlayerId);
+        }
+      } catch (e) {
+        myPlayerId = generateRandomPlayerId();
+      }
+      document.getElementById('playerIdBadge').textContent = myPlayerId;
+    }
+
+    function regeneratePlayerIdentity() {
+      myPlayerId = generateRandomPlayerId();
+      try {
+        sessionStorage.setItem('got5_player_id', myPlayerId);
+      } catch (e) {}
+      document.getElementById('playerIdBadge').textContent = myPlayerId;
+      if (state.players && state.players[state.mySeatIndex]) {
+        state.players[state.mySeatIndex].id = myPlayerId;
+        const nick = document.getElementById('inpNickname').value.trim();
+        state.players[state.mySeatIndex].name = nick ? `${nick} (${myPlayerId})` : myPlayerId;
+        renderRoomRoster();
+      }
+      playSound('mark');
+    }
+
+    // =========================================================================
+    // 3. SYNTHESIZED SOUND EFFECTS (Web Audio API with Mute Toggle)
+    // =========================================================================
+    let audioCtx = null;
+    let isMuted = false;
+
+    function playSound(type) {
+      if (isMuted) return;
+      try {
+        if (!audioCtx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) audioCtx = new AudioContextClass();
+        }
+        if (!audioCtx) return;
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        if (type === 'flip') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(360, now);
+          osc.frequency.exponentialRampToValueAtTime(620, now + 0.09);
+          gain.gain.setValueAtTime(0.11, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+          osc.start(now);
+          osc.stop(now + 0.1);
+        } else if (type === 'clue') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(460, now);
+          osc.frequency.exponentialRampToValueAtTime(680, now + 0.14);
+          gain.gain.setValueAtTime(0.12, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+          osc.start(now);
+          osc.stop(now + 0.15);
+        } else if (type === 'mark') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(540, now);
+          gain.gain.setValueAtTime(0.05, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+          osc.start(now);
+          osc.stop(now + 0.05);
+        } else if (type === 'tick') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(750, now);
+          gain.gain.setValueAtTime(0.04, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+          osc.start(now);
+          osc.stop(now + 0.04);
+        } else if (type === 'win') {
+          [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.type = 'triangle';
+            o.connect(g);
+            g.connect(audioCtx.destination);
+            o.frequency.setValueAtTime(freq, now + idx * 0.09);
+            g.gain.setValueAtTime(0.14, now + idx * 0.09);
+            g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.09 + 0.25);
+            o.start(now + idx * 0.09);
+            o.stop(now + idx * 0.09 + 0.25);
+          });
+        } else if (type === 'lose') {
+          [300, 240].forEach((freq, idx) => {
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.type = 'sawtooth';
+            o.connect(g);
+            g.connect(audioCtx.destination);
+            o.frequency.setValueAtTime(freq, now + idx * 0.15);
+            g.gain.setValueAtTime(0.09, now + idx * 0.15);
+            g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.15 + 0.25);
+            o.start(now + idx * 0.15);
+            o.stop(now + idx * 0.15 + 0.25);
+          });
+        }
+      } catch (e) {}
+    }
+
+    // =========================================================================
+    // 4. MULTIPLAYER NETWORKING (PeerJS WebRTC for GitHub Pages + BroadcastChannel)
+    // =========================================================================
+    let peerInstance = null;
+    let hostConnections = [];
+    let clientConnection = null;
+    let broadcastChannel = null;
+
+    function setupBroadcastChannel(roomCode) {
+      try {
+        if (broadcastChannel) broadcastChannel.close();
+        broadcastChannel = new BroadcastChannel(`got5_channel_${roomCode}`);
+        broadcastChannel.onmessage = (ev) => {
+          handleNetworkMessage(ev.data, null);
+        };
+      } catch (e) {}
+    }
+
+    function broadcastStateToPeers() {
+      const payload = {
+        type: 'SYNC_STATE',
+        roomCode: state.roomCode,
+        sharedState: getSerializableSharedState()
+      };
+      if (broadcastChannel) {
+        try { broadcastChannel.postMessage(payload); } catch (e) {}
+      }
+      hostConnections.forEach(conn => {
+        if (conn && conn.open) {
+          try { conn.send(payload); } catch (e) {}
+        }
+      });
+    }
+
+    function sendActionToHost(actionObj) {
+      if (state.isHost) {
+        processHostAction(actionObj);
+      } else {
+        if (clientConnection && clientConnection.open) {
+          clientConnection.send(actionObj);
+        } else if (broadcastChannel) {
+          broadcastChannel.postMessage(actionObj);
+        }
+      }
+    }
+
+    function handleNetworkMessage(msg, conn) {
+      if (!msg || !msg.type) return;
+      if (msg.type === 'JOIN_REQUEST' && state.isHost) {
+        const existingSeat = state.players.findIndex(p => p.id === msg.playerId);
+        let assignedSeat = existingSeat;
+        if (assignedSeat === -1) {
+          const openSeat = state.players.findIndex((p, idx) => idx > 0 && p.isBot);
+          assignedSeat = openSeat !== -1 ? openSeat : (state.players.length < state.maxPlayers ? state.players.length : 1);
+        }
+        if (state.players[assignedSeat]) {
+          state.players[assignedSeat].id = msg.playerId;
+          state.players[assignedSeat].name = msg.playerName || msg.playerId;
+          state.players[assignedSeat].isBot = false;
+        }
+        state.clueLog.unshift(`🌐 Player ${msg.playerName || msg.playerId} joined Seat #${assignedSeat + 1}!`);
+        broadcastStateToPeers();
+        renderAll();
+      } else if (msg.type === 'PLAYER_ACTION' && state.isHost) {
+        processHostAction(msg);
+      } else if (msg.type === 'SYNC_STATE' && !state.isHost) {
+        applySharedStateFromHost(msg.sharedState);
+      }
+    }
+
+    function getSerializableSharedState() {
+      return {
+        roomCode: state.roomCode,
+        maxPlayers: state.maxPlayers,
+        turn: state.turn,
+        activeSeatIndex: state.activeSeatIndex,
+        phase: state.phase,
+        supplyByColor: state.supplyByColor,
+        centerPool: state.centerPool.map(t => t.num),
+        selectedPoolNum: state.selectedPoolNum,
+        players: state.players.map(p => ({
+          id: p.id,
+          name: p.name,
+          isBot: p.isBot,
+          timeLimit: p.timeLimit,
+          tiles: p.tiles.map(t => t.num),
+          notches: p.notches.map(nList => nList.map(t => t.num)),
+          compareHistory: p.compareHistory.map(cList => cList.map(c => ({ num: c.tile.num, sameDots: c.sameDots })))
+        })),
+        timeLeft: state.timeLeft,
+        clueLog: state.clueLog,
+        gameRevealed: state.gameRevealed
+      };
+    }
+
+    function applySharedStateFromHost(shared) {
+      state.roomCode = shared.roomCode;
+      state.maxPlayers = shared.maxPlayers;
+      state.turn = shared.turn;
+      state.activeSeatIndex = shared.activeSeatIndex;
+      state.phase = shared.phase;
+      state.supplyByColor = shared.supplyByColor;
+      state.centerPool = shared.centerPool.map(n => getTileMeta(n));
+      state.selectedPoolNum = shared.selectedPoolNum;
+      state.players = shared.players.map(p => ({
+        id: p.id,
+        name: p.name,
+        isBot: p.isBot,
+        timeLimit: p.timeLimit,
+        tiles: p.tiles.map(n => getTileMeta(n)),
+        notches: p.notches.map(nList => nList.map(n => getTileMeta(n))),
+        compareHistory: p.compareHistory.map(cList => cList.map(c => ({ tile: getTileMeta(c.num), sameDots: c.sameDots })))
+      }));
+      const foundSeat = state.players.findIndex(p => p.id === myPlayerId);
+      if (foundSeat !== -1) state.mySeatIndex = foundSeat;
+      state.timeLeft = shared.timeLeft;
+      state.clueLog = shared.clueLog;
+      state.gameRevealed = shared.gameRevealed;
+      syncLegacyPlayerAliases();
+      renderAll();
+    }
+
+    // =========================================================================
+    // 5. GAME STATE & TURN TIMER ENGINE
+    // =========================================================================
+    let timerInterval = null;
+
+    let state = {
+      roomCode: 'LOCAL-SOLO',
+      isHost: true,
+      maxPlayers: 2,
+      mySeatIndex: 0,
+      activeSeatIndex: 0,
+      viewingOpponentSeat: 1,
+      turn: 1,
+      phase: 'REVEAL',
+      supplyByColor: [[], [], [], [], []],
+      players: [],
+      playerTiles: [],
+      opponentTiles: [],
+      centerPool: [],
+      selectedPoolNum: null,
+      compareSubMode: false,
+      notches: [[], [], [], [], [], []],
+      compareHistory: [[], [], [], [], []],
+      scratchpad: {},
+      clueLog: [],
+      timeLeft: 45,
+      timerPaused: false,
+      gameRevealed: false
+    };
+
+    function shuffle(arr) {
+      const copy = [...arr];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    }
+
+    function getConfiguredTimers() {
+      return [
+        Math.max(10, Math.min(300, parseInt(document.getElementById('timerP1').value, 10) || 45)),
+        Math.max(10, Math.min(300, parseInt(document.getElementById('timerP2').value, 10) || 45)),
+        Math.max(10, Math.min(300, parseInt(document.getElementById('timerP3').value, 10) || 60)),
+        Math.max(10, Math.min(300, parseInt(document.getElementById('timerP4').value, 10) || 60))
+      ];
+    }
+
+    function syncLegacyPlayerAliases() {
+      const me = state.players[state.mySeatIndex] || state.players[0];
+      if (me) {
+        state.playerTiles = me.tiles;
+        state.notches = me.notches;
+        state.compareHistory = me.compareHistory;
+      }
+      if (state.viewingOpponentSeat === state.mySeatIndex || !state.players[state.viewingOpponentSeat]) {
+        const firstOther = state.players.findIndex((_, idx) => idx !== state.mySeatIndex);
+        state.viewingOpponentSeat = firstOther !== -1 ? firstOther : 0;
+      }
+      const opp = state.players[state.viewingOpponentSeat];
+      state.opponentTiles = opp ? opp.tiles : [];
+    }
+
+    function initGame(customRoomCode) {
+      const playerCount = parseInt(document.getElementById('selPlayerCount').value, 10) || 2;
+      const timers = getConfiguredTimers();
+      const fillBots = document.getElementById('chkFillBots').checked;
+      const nick = document.getElementById('inpNickname').value.trim();
+
+      const stacks = [[], [], [], [], []];
+      for (let n = 1; n <= 60; n++) {
+        stacks[(n - 1) % 5].push(n);
+      }
+      for (let c = 0; c < 5; c++) {
+        stacks[c] = shuffle(stacks[c]);
+      }
+
+      const players = [];
+      for (let p = 0; p < playerCount; p++) {
+        const hand = [];
+        for (let c = 0; c < 5; c++) {
+          hand.push(getTileMeta(stacks[c].pop()));
+        }
+        hand.sort((a, b) => a.num - b.num);
+        const isMe = p === 0;
+        const botId = `BOT-${p + 1}`;
+        players.push({
+          id: isMe ? myPlayerId : botId,
+          name: isMe ? (nick ? `${nick} (${myPlayerId})` : `${myPlayerId} (You)`) : (fillBots ? `AI Bot #${p + 1}` : `Waiting Seat #${p + 1}`),
+          isBot: !isMe && fillBots,
+          timeLimit: timers[p] || 45,
+          tiles: hand,
+          notches: [[], [], [], [], [], []],
+          compareHistory: [[], [], [], [], []]
+        });
+      }
+
+      const pool = [];
+      for (let c = 0; c < 5; c++) {
+        pool.push(getTileMeta(stacks[c].pop()));
+      }
+      pool.sort((a, b) => a.num - b.num);
+
+      const nextRoomCode = typeof customRoomCode === 'string' ? customRoomCode : state.roomCode;
+
+      state = {
+        roomCode: nextRoomCode,
+        isHost: true,
+        maxPlayers: playerCount,
+        mySeatIndex: 0,
+        activeSeatIndex: 0,
+        viewingOpponentSeat: 1,
+        turn: 1,
+        phase: 'REVEAL',
+        supplyByColor: stacks,
+        players,
+        playerTiles: [],
+        opponentTiles: [],
+        centerPool: pool,
+        selectedPoolNum: null,
+        compareSubMode: false,
+        notches: [[], [], [], [], [], []],
+        compareHistory: [[], [], [], [], []],
+        scratchpad: {},
+        clueLog: [`🎲 Game started in Room ${nextRoomCode} (${playerCount} players).`],
+        timeLeft: players[0].timeLimit,
+        timerPaused: false,
+        gameRevealed: false
+      };
+
+      syncLegacyPlayerAliases();
+      startTurnTimerLoop();
+      broadcastStateToPeers();
+      renderAll();
+    }
+
+    function startTurnTimerLoop() {
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        if (state.phase === 'GAMEOVER' || state.timerPaused) return;
+        if (!state.isHost) return;
+
+        if (state.timeLeft > 0) {
+          state.timeLeft -= 1;
+          if (state.timeLeft <= 5 && state.timeLeft > 0) {
+            playSound('tick');
+          }
+          renderTurnTimer();
+        } else {
+          handleTurnTimeout();
+        }
+      }, 1000);
+    }
+
+    function handleTurnTimeout() {
+      const activePlayer = state.players[state.activeSeatIndex];
+      state.clueLog.unshift(`⏰ Time expired for ${activePlayer ? activePlayer.name : 'Player'}! Auto-completing turn.`);
+      if (state.phase === 'REVEAL') {
+        const availableColors = [0, 1, 2, 3, 4].filter(c => state.supplyByColor[c].length > 0);
+        if (availableColors.length > 0) {
+          const randColor = availableColors[Math.floor(Math.random() * availableColors.length)];
+          const drawnNum = state.supplyByColor[randColor].pop();
+          state.centerPool.push(getTileMeta(drawnNum));
+          state.centerPool.sort((a, b) => a.num - b.num);
+          state.selectedPoolNum = drawnNum;
+        }
+      }
+      const tileToUse = state.selectedPoolNum || (state.centerPool[0] && state.centerPool[0].num);
+      if (tileToUse) {
+        executeSortClueForSeat(state.activeSeatIndex, tileToUse, true);
+      } else {
+        advanceToNextSeat();
+      }
+    }
+
+    // =========================================================================
+    // 6. ROOM CREATION & JOINING HANDLERS (+ URL ?room= AUTO-JOIN)
+    // =========================================================================
+    function createMultiplayerRoom() {
+      const randDigits = Math.floor(1000 + Math.random() * 9000);
+      const roomCode = `G5-${randDigits}`;
+      document.getElementById('activeRoomCode').textContent = roomCode;
+      try {
+        window.history.replaceState({}, '', `?room=${roomCode}`);
+      } catch (e) {}
+      initGame(roomCode);
+      setupBroadcastChannel(roomCode);
+
+      if (typeof Peer !== 'undefined') {
+        try {
+          if (peerInstance) peerInstance.destroy();
+          hostConnections = [];
+          peerInstance = new Peer(`gotfive-room-${roomCode}`);
+          peerInstance.on('open', () => {
+            document.getElementById('roomCreatedFeedback').textContent = `✅ Live Room ${roomCode} ready! Share code or Invite Link.`;
+          });
+          peerInstance.on('connection', (conn) => {
+            hostConnections.push(conn);
+            conn.on('data', (data) => handleNetworkMessage(data, conn));
+            conn.on('open', () => {
+              conn.send({ type: 'SYNC_STATE', roomCode, sharedState: getSerializableSharedState() });
+            });
+          });
+          peerInstance.on('error', () => {
+            document.getElementById('roomCreatedFeedback').textContent = `✅ Room ${roomCode} active.`;
+          });
+        } catch (e) {
+          document.getElementById('roomCreatedFeedback').textContent = `✅ Room ${roomCode} created!`;
+        }
+      } else {
+        document.getElementById('roomCreatedFeedback').textContent = `✅ Room ${roomCode} created!`;
+      }
+      playSound('clue');
+    }
+
+    function joinMultiplayerRoom(explicitCode) {
+      const rawCode = (typeof explicitCode === 'string' ? explicitCode : document.getElementById('inpJoinCode').value).trim().toUpperCase();
+      if (!rawCode) return;
+      const roomCode = rawCode.startsWith('G5-') ? rawCode : `G5-${rawCode}`;
+      const nick = document.getElementById('inpNickname').value.trim();
+      const playerName = nick ? `${nick} (${myPlayerId})` : myPlayerId;
+
+      state.isHost = false;
+      state.roomCode = roomCode;
+      document.getElementById('activeRoomCode').textContent = roomCode;
+      document.getElementById('inpJoinCode').value = roomCode;
+      document.getElementById('joinStatusText').textContent = `Connecting to Room ${roomCode}...`;
+
+      setupBroadcastChannel(roomCode);
+      if (broadcastChannel) {
+        try {
+          broadcastChannel.postMessage({ type: 'JOIN_REQUEST', playerId: myPlayerId, playerName });
+        } catch (e) {}
+      }
+
+      if (typeof Peer !== 'undefined') {
+        try {
+          if (peerInstance) peerInstance.destroy();
+          peerInstance = new Peer();
+          peerInstance.on('open', () => {
+            clientConnection = peerInstance.connect(`gotfive-room-${roomCode}`);
+            clientConnection.on('open', () => {
+              document.getElementById('joinStatusText').textContent = `✅ Connected to Room ${roomCode}!`;
+              clientConnection.send({ type: 'JOIN_REQUEST', playerId: myPlayerId, playerName });
+            });
+            clientConnection.on('data', (data) => handleNetworkMessage(data, clientConnection));
+          });
+        } catch (e) {}
+      }
+      playSound('flip');
+    }
+
+    // =========================================================================
+    // 7. TURN ACTIONS: REVEAL A SUPPLY TILE & ASK FOR A CLUE
+    // =========================================================================
+    function isMyTurn() {
+      return state.phase !== 'GAMEOVER' && state.activeSeatIndex === state.mySeatIndex;
+    }
+
+    function processHostAction(action) {
+      if (action.actionType === 'DRAW_SUPPLY') {
+        const stack = state.supplyByColor[action.colorIndex];
+        if (!stack || stack.length === 0 || state.phase !== 'REVEAL') return;
+        const drawnNum = stack.pop();
+        const tile = getTileMeta(drawnNum);
+        state.centerPool.push(tile);
+        state.centerPool.sort((a, b) => a.num - b.num);
+        state.selectedPoolNum = drawnNum;
+        state.phase = 'CLUE';
+        state.compareSubMode = false;
+        playSound('flip');
+        broadcastStateToPeers();
+        renderAll();
+      } else if (action.actionType === 'SORT_CLUE') {
+        executeSortClueForSeat(action.seatIndex, action.tileNum, false);
+      } else if (action.actionType === 'COMPARE_CLUE') {
+        executeCompareClueForSeat(action.seatIndex, action.tileNum, action.slotIndex);
+      }
+    }
+
+    function handleDrawSupply(colorIndex) {
+      if (!isMyTurn() || state.phase !== 'REVEAL') return;
+      sendActionToHost({
+        type: 'PLAYER_ACTION',
+        actionType: 'DRAW_SUPPLY',
+        seatIndex: state.mySeatIndex,
+        colorIndex
+      });
+    }
+
+    function handleSelectPoolTile(num) {
+      if (!isMyTurn() || state.phase !== 'CLUE') return;
+      state.selectedPoolNum = num;
+      state.compareSubMode = false;
+      playSound('mark');
+      renderAll();
+    }
+
+    function handleSortClue() {
+      if (!isMyTurn() || state.phase !== 'CLUE' || !state.selectedPoolNum) return;
+      sendActionToHost({
+        type: 'PLAYER_ACTION',
+        actionType: 'SORT_CLUE',
+        seatIndex: state.mySeatIndex,
+        tileNum: state.selectedPoolNum
+      });
+    }
+
+    function handleCompareClue(slotIndex) {
+      if (!isMyTurn() || state.phase !== 'CLUE' || !state.selectedPoolNum) return;
+      sendActionToHost({
+        type: 'PLAYER_ACTION',
+        actionType: 'COMPARE_CLUE',
+        seatIndex: state.mySeatIndex,
+        tileNum: state.selectedPoolNum,
+        slotIndex
+      });
+    }
+
+    function executeSortClueForSeat(seatIndex, chosenNum, isTimeout) {
+      const player = state.players[seatIndex];
+      if (!player) return;
+      const chosenTile = getTileMeta(chosenNum);
+      state.centerPool = state.centerPool.filter(t => t.num !== chosenNum);
+
+      let notchIndex = 0;
+      for (let i = 0; i < 5; i++) {
+        if (chosenNum > player.tiles[i].num) {
+          notchIndex = i + 1;
+        }
+      }
+      player.notches[notchIndex].push(chosenTile);
+      player.notches[notchIndex].sort((a, b) => a.num - b.num);
+
+      const posDescriptions = [
+        'smaller than Tile #1',
+        'between Tile #1 and Tile #2',
+        'between Tile #2 and Tile #3',
+        'between Tile #3 and Tile #4',
+        'between Tile #4 and Tile #5',
+        'larger than Tile #5'
+      ];
+      state.clueLog.unshift(
+        `Turn ${state.turn} (${player.name} • Sort${isTimeout ? '/Auto' : ''}): Tile ${chosenNum} (${chosenTile.color.name}) is ${posDescriptions[notchIndex]}.`
+      );
+
+      advanceToNextSeat();
+    }
+
+    function executeCompareClueForSeat(seatIndex, chosenNum, slotIndex) {
+      const player = state.players[seatIndex];
+      if (!player) return;
+      const chosenTile = getTileMeta(chosenNum);
+      const targetTile = player.tiles[slotIndex];
+
+      state.centerPool = state.centerPool.filter(t => t.num !== chosenNum);
+      const sameDots = chosenTile.dots === targetTile.dots;
+
+      player.compareHistory[slotIndex].push({
+        tile: chosenTile,
+        sameDots
+      });
+
+      state.clueLog.unshift(
+        `Turn ${state.turn} (${player.name} • Compare): Tile ${chosenNum} (${chosenTile.dots} dot${chosenTile.dots > 1 ? 's' : ''}) vs Tile #${slotIndex + 1} → ${sameDots ? 'YES (Same dots!)' : 'NO (Different dots)'}.`
+      );
+
+      advanceToNextSeat();
+    }
+
+    function advanceToNextSeat() {
+      playSound('clue');
+      state.selectedPoolNum = null;
+      state.compareSubMode = false;
+
+      const nextSeat = (state.activeSeatIndex + 1) % state.players.length;
+      if (nextSeat === 0) {
+        state.turn += 1;
+      }
+      state.activeSeatIndex = nextSeat;
+      const activePlayer = state.players[state.activeSeatIndex];
+      state.timeLeft = activePlayer ? activePlayer.timeLimit : 45;
+
+      const totalSupply = state.supplyByColor.reduce((acc, s) => acc + s.length, 0);
+      state.phase = totalSupply > 0 ? 'REVEAL' : 'CLUE';
+      if (state.phase === 'CLUE' && state.centerPool[0]) {
+        state.selectedPoolNum = state.centerPool[0].num;
+      }
+
+      syncLegacyPlayerAliases();
+      broadcastStateToPeers();
+      renderAll();
+
+      if (state.isHost && activePlayer && activePlayer.isBot && state.phase !== 'GAMEOVER') {
+        setTimeout(() => runAiBotTurn(state.activeSeatIndex), 900);
+      }
+    }
+
+    function runAiBotTurn(botSeatIndex) {
+      if (state.phase === 'GAMEOVER' || state.activeSeatIndex !== botSeatIndex) return;
+      const availableColors = [0, 1, 2, 3, 4].filter(c => state.supplyByColor[c].length > 0);
+      if (state.phase === 'REVEAL' && availableColors.length > 0) {
+        const randColor = availableColors[Math.floor(Math.random() * availableColors.length)];
+        const drawnNum = state.supplyByColor[randColor].pop();
+        state.centerPool.push(getTileMeta(drawnNum));
+        state.centerPool.sort((a, b) => a.num - b.num);
+        state.selectedPoolNum = drawnNum;
+        state.phase = 'CLUE';
+      }
+      const poolChoice = state.selectedPoolNum || (state.centerPool[0] && state.centerPool[0].num);
+      if (poolChoice) {
+        if (Math.random() < 0.7) {
+          executeSortClueForSeat(botSeatIndex, poolChoice, false);
+        } else {
+          const randSlot = Math.floor(Math.random() * 5);
+          executeCompareClueForSeat(botSeatIndex, poolChoice, randSlot);
+        }
+      }
+    }
+
+    // =========================================================================
+    // 8. DEDUCTION SCRATCHPAD & SMART AUTO-DEDUCE ACTIONS
+    // =========================================================================
+    function toggleScratchCell(num) {
+      const current = state.scratchpad[num] || 0;
+      state.scratchpad[num] = (current + 1) % 3;
+      playSound('mark');
+      renderDeductionGrid();
+    }
+
+    function autoCrossVisibleTiles() {
+      state.players.forEach((p, idx) => {
+        if (idx !== state.mySeatIndex) {
+          p.tiles.forEach(t => { if (state.scratchpad[t.num] !== 2) state.scratchpad[t.num] = 1; });
+        }
+        p.notches.forEach(list => list.forEach(t => { if (state.scratchpad[t.num] !== 2) state.scratchpad[t.num] = 1; }));
+        p.compareHistory.forEach(list => list.forEach(item => { if (state.scratchpad[item.tile.num] !== 2) state.scratchpad[item.tile.num] = 1; }));
+      });
+      state.centerPool.forEach(t => { if (state.scratchpad[t.num] !== 2) state.scratchpad[t.num] = 1; });
+      playSound('clue');
+      renderDeductionGrid();
+    }
+
+    function runSmartAutoDeduce() {
+      autoCrossVisibleTiles();
+      // For each of the 5 slots on the player's stand, compute min/max bounds from sorting notches
+      for (let slot = 0; slot < 5; slot++) {
+        const slotColorIdx = state.playerTiles[slot].colorIndex;
+        // Minimum possible value based on notches 0..slot and ascending order (slot + 1)
+        let minVal = slot + 1;
+        for (let n = 0; n <= slot; n++) {
+          state.notches[n].forEach(t => {
+            if (t.num >= minVal) minVal = t.num + 1;
+          });
+        }
+        // Maximum possible value based on notches (slot+1)..5 and ascending order (56 + slot)
+        let maxVal = 56 + slot;
+        for (let n = slot + 1; n <= 5; n++) {
+          state.notches[n].forEach(t => {
+            if (t.num <= maxVal) maxVal = t.num - 1;
+          });
+        }
+        // Check dot constraints for this slot
+        const compares = state.compareHistory[slot] || [];
+
+        for (let num = 1; num <= 60; num++) {
+          const meta = getTileMeta(num);
+          if (meta.colorIndex !== slotColorIdx) continue;
+          let impossible = (num < minVal || num > maxVal);
+          compares.forEach(c => {
+            if (c.sameDots && meta.dots !== c.tile.dots) impossible = true;
+            if (!c.sameDots && meta.dots === c.tile.dots) impossible = true;
+          });
+          if (impossible && state.scratchpad[num] !== 2) {
+            state.scratchpad[num] = 1;
+          }
+        }
+      }
+      renderDeductionGrid();
+    }
+
+    // =========================================================================
+    // 9. RENDERING UI COMPONENTS
+    // =========================================================================
+    function renderAll() {
+      syncLegacyPlayerAliases();
+      renderRoomRoster();
+      renderStatusBanner();
+      renderTurnTimer();
+      renderOpponentStand();
+      renderSupplyStacks();
+      renderCenterPool();
+      renderClueControls();
+      renderPlayerStand();
+      renderSortingNotches();
+      renderDeductionGrid();
+      renderClueLog();
+    }
+
+    function renderRoomRoster() {
+      document.getElementById('activeRoomCode').textContent = state.roomCode;
+      const rosterEl = document.getElementById('roomRosterList');
+      rosterEl.innerHTML = state.players.map((p, idx) => {
+        const isCurrent = idx === state.activeSeatIndex && state.phase !== 'GAMEOVER';
+        return `
+          <div class="flex items-center justify-between px-2.5 py-1 rounded-lg ${isCurrent ? 'bg-indigo-50 border border-indigo-200 font-bold text-indigo-900' : 'bg-slate-50 text-slate-700'}">
+            <span>Seat #${idx + 1}: ${p.name} ${isCurrent ? '👈 Turn' : ''}</span>
+            <span class="font-mono text-[11px] text-slate-500">${p.timeLimit}s/turn</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderTurnTimer() {
+      const el = document.getElementById('turnTimerDisplay');
+      el.textContent = `${state.timeLeft}s`;
+      if (state.timeLeft <= 10) {
+        el.className = 'font-mono font-extrabold text-sm sm:text-base text-rose-600 animate-pulse';
+      } else {
+        el.className = 'font-mono font-extrabold text-sm sm:text-base text-indigo-700';
+      }
+    }
+
+    function renderStatusBanner() {
+      const badge = document.getElementById('turnBadge');
+      const headline = document.getElementById('statusHeadline');
+      const subtext = document.getElementById('statusSubtext');
+      const activePlayer = state.players[state.activeSeatIndex];
+
+      if (state.phase === 'GAMEOVER') {
+        badge.textContent = 'GAME OVER';
+        badge.className = 'px-3 py-1.5 rounded-xl bg-emerald-500 text-white font-extrabold text-xs sm:text-sm whitespace-nowrap';
+        headline.textContent = 'All 5 of your mystery tiles have been revealed!';
+        subtext.textContent = 'Tap "New Game" or create a new room to play another round.';
+      } else if (!isMyTurn()) {
+        badge.textContent = `TURN ${state.turn} • SEAT #${state.activeSeatIndex + 1}`;
+        badge.className = 'px-3 py-1.5 rounded-xl bg-indigo-600 text-white font-extrabold text-xs sm:text-sm whitespace-nowrap';
+        headline.textContent = `Waiting for ${activePlayer ? activePlayer.name : 'Opponent'} to finish their turn...`;
+        subtext.textContent = 'You can still mark your deduction sheet or shout "GOT FIVE!" at any time!';
+      } else if (state.phase === 'REVEAL') {
+        badge.textContent = `TURN ${state.turn} • STEP 1`;
+        badge.className = 'px-3 py-1.5 rounded-xl bg-amber-400 text-slate-950 font-extrabold text-xs sm:text-sm whitespace-nowrap';
+        headline.textContent = 'Step 1 (Your Turn): Tap any colored Supply Stack to flip a new tile face-up!';
+        subtext.textContent = 'Every tile flipped into the center pool is a number you can cross off your board.';
+      } else {
+        badge.textContent = `TURN ${state.turn} • STEP 2`;
+        badge.className = 'px-3 py-1.5 rounded-xl bg-sky-500 text-white font-extrabold text-xs sm:text-sm whitespace-nowrap';
+        headline.textContent = state.selectedPoolNum
+          ? `Step 2: Tile #${state.selectedPoolNum} selected — Choose "Sort Clue" or "Compare Dots"!`
+          : 'Step 2: Tap any face-up tile from the Center Pool to ask for a clue.';
+        subtext.textContent = 'Sort places the tile in your 6 notches; Compare checks if it shares the same dot count as one of your tiles.';
+      }
+    }
+
+    function renderOpponentStand() {
+      const tabsEl = document.getElementById('opponentTabs');
+      const otherSeats = state.players
+        .map((p, idx) => ({ p, idx }))
+        .filter(item => item.idx !== state.mySeatIndex);
+
+      tabsEl.innerHTML = otherSeats.map(({ p, idx }) => {
+        const active = idx === state.viewingOpponentSeat;
+        return `
+          <button type="button" data-opp-seat="${idx}"
+            class="opp-tab-btn px-2.5 py-1 rounded-lg text-xs font-bold transition ${active ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}">
+            Seat #${idx + 1}: ${p.name}
+          </button>
+        `;
+      }).join('');
+
+      tabsEl.querySelectorAll('.opp-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.viewingOpponentSeat = parseInt(btn.getAttribute('data-opp-seat'), 10);
+          syncLegacyPlayerAliases();
+          renderOpponentStand();
+        });
+      });
+
+      const container = document.getElementById('opponentStand');
+      container.innerHTML = state.opponentTiles.map((t, idx) => `
+        <div class="${t.color.bg} ${t.color.border} ${t.color.text} border-2 rounded-xl p-1.5 sm:p-2 flex flex-col items-center justify-between tile-shadow-sm">
+          <span class="text-[9px] sm:text-[10px] font-bold uppercase opacity-80">Tile #${idx + 1}</span>
+          <span class="text-lg sm:text-2xl font-extrabold leading-none my-1">${t.num}</span>
+          <span class="text-xs font-black tracking-widest leading-none">${t.dotsStr}</span>
+        </div>
+      `).join('');
+    }
+
+    function renderSupplyStacks() {
+      const container = document.getElementById('supplyStacks');
+      const totalLeft = state.supplyByColor.reduce((acc, s) => acc + s.length, 0);
+      document.getElementById('supplyRemainingBadge').textContent = `${totalLeft} left in supply`;
+
+      container.innerHTML = COLORS.map((c, idx) => {
+        const count = state.supplyByColor[idx].length;
+        const canClick = isMyTurn() && state.phase === 'REVEAL' && count > 0;
+        return `
+          <button type="button" data-supply-color="${idx}"
+            ${canClick ? '' : 'disabled'}
+            class="supply-stack-btn ${c.bg} ${c.border} ${c.text} border-2 rounded-xl p-2 sm:p-2.5 flex flex-col items-center justify-center transition transform ${canClick ? 'hover:-translate-y-1 active:scale-95 cursor-pointer tile-shadow' : 'opacity-50 cursor-not-allowed'}">
+            <span class="text-[11px] sm:text-xs font-extrabold uppercase">${c.name}</span>
+            <span class="text-[10px] sm:text-[11px] font-bold opacity-85 mt-0.5">${count} left</span>
+            <span class="mt-1 text-[10px] font-extrabold px-1.5 sm:px-2 py-0.5 rounded bg-white/60">
+              ${canClick ? 'Flip 1' : (count === 0 ? 'Empty' : 'Wait')}
+            </span>
+          </button>
+        `;
+      }).join('');
+
+      container.querySelectorAll('.supply-stack-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const colorIdx = parseInt(btn.getAttribute('data-supply-color'), 10);
+          handleDrawSupply(colorIdx);
+        });
+      });
+    }
+
+    function renderCenterPool() {
+      const container = document.getElementById('centerPool');
+      document.getElementById('poolCountBadge').textContent = `${state.centerPool.length} face-up tile${state.centerPool.length === 1 ? '' : 's'}`;
+
+      if (state.centerPool.length === 0) {
+        container.innerHTML = `<span class="text-xs text-slate-400 italic">No tiles in center pool. Flip a supply tile!</span>`;
+        return;
+      }
+
+      container.innerHTML = state.centerPool.map(t => {
+        const isSelected = state.selectedPoolNum === t.num;
+        const canSelect = isMyTurn() && state.phase === 'CLUE';
+        return `
+          <button type="button" data-pool-num="${t.num}"
+            class="pool-tile-btn ${t.color.bg} ${t.color.border} ${t.color.text} border-2 rounded-xl px-3 py-1.5 min-w-[3rem] min-h-[3rem] flex flex-col items-center justify-center transition ${canSelect ? 'cursor-pointer hover:scale-105 active:scale-95' : 'cursor-default'} ${isSelected ? 'ring-4 ring-indigo-600 scale-105 tile-shadow' : 'opacity-95 tile-shadow-sm'}">
+            <span class="text-base sm:text-lg font-extrabold leading-none">${t.num}</span>
+            <span class="text-xs font-black tracking-widest leading-none mt-1">${t.dotsStr}</span>
+          </button>
+        `;
+      }).join('');
+
+      container.querySelectorAll('.pool-tile-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const num = parseInt(btn.getAttribute('data-pool-num'), 10);
+          handleSelectPoolTile(num);
+        });
+      });
+    }
+
+    function renderClueControls() {
+      const promptEl = document.getElementById('selectedTilePrompt');
+      const btnSort = document.getElementById('btnSortClue');
+      const btnCompare = document.getElementById('btnCompareMode');
+      const compareSelector = document.getElementById('compareSlotSelector');
+
+      const readyForClue = isMyTurn() && state.phase === 'CLUE' && state.selectedPoolNum !== null;
+      btnSort.disabled = !readyForClue;
+      btnCompare.disabled = !readyForClue;
+
+      if (!isMyTurn()) {
+        promptEl.textContent = 'Waiting for active player to complete their turn...';
+        compareSelector.classList.add('hidden');
+      } else if (state.phase === 'REVEAL') {
+        promptEl.textContent = 'Step 1: Flip a tile from the Supply Stacks above first.';
+        compareSelector.classList.add('hidden');
+      } else if (!state.selectedPoolNum) {
+        promptEl.textContent = 'Step 2: Tap a face-up tile in the Center Pool to use for your clue.';
+        compareSelector.classList.add('hidden');
+      } else {
+        const t = getTileMeta(state.selectedPoolNum);
+        promptEl.innerHTML = `Using Tile <strong>#${t.num}</strong> (${t.color.name}, ${t.dots} dot${t.dots > 1 ? 's' : ''}) — Pick a clue action:`;
+        if (state.compareSubMode) {
+          compareSelector.classList.remove('hidden');
+        } else {
+          compareSelector.classList.add('hidden');
+        }
+      }
+    }
+
+    function renderPlayerStand() {
+      const container = document.getElementById('playerStand');
+      container.innerHTML = state.playerTiles.map((t, idx) => {
+        const compares = state.compareHistory[idx] || [];
+        const compareBadges = compares.map(c => `
+          <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${c.sameDots ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'}" title="Compared with Tile #${c.tile.num} (${c.tile.dots} dots)">
+            ${c.sameDots ? '=' : '≠'}${c.tile.num}(${c.tile.dotsStr})
+          </span>
+        `).join('');
+
+        return `
+          <div class="flex flex-col items-center space-y-1.5">
+            <div class="${t.color.bg} ${t.color.border} ${t.color.text} border-2 rounded-2xl w-full py-2.5 sm:py-3 px-1.5 sm:px-2 flex flex-col items-center justify-between tile-shadow relative">
+              <span class="text-[9px] sm:text-[10px] font-extrabold uppercase opacity-85">#${idx + 1} ${t.color.name}</span>
+              ${state.gameRevealed ? `
+                <span class="text-xl sm:text-2xl font-black my-1">${t.num}</span>
+                <span class="text-xs font-black tracking-widest">${t.dotsStr}</span>
+              ` : `
+                <div class="my-1.5 flex items-center gap-1 sm:gap-1.5">
+                  <span class="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-white flex items-center justify-center shadow-inner border border-slate-300">
+                    <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-slate-900"></span>
+                  </span>
+                  <span class="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-white flex items-center justify-center shadow-inner border border-slate-300">
+                    <span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-slate-900"></span>
+                  </span>
+                </div>
+                <span class="text-[11px] sm:text-xs font-extrabold px-2 py-0.5 rounded-full bg-white/50">? ?</span>
+              `}
+            </div>
+            <div class="flex flex-wrap justify-center gap-1 min-h-[1.25rem]">
+              ${compareBadges || '<span class="text-[10px] text-slate-400">No clues</span>'}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderSortingNotches() {
+      const container = document.getElementById('sortingNotches');
+      const labels = ['< #1', '#1–#2', '#2–#3', '#3–#4', '#4–#5', '> #5'];
+
+      container.innerHTML = state.notches.map((tiles, idx) => {
+        const tilesHtml = tiles.map(t => `
+          <span class="${t.color.bg} ${t.color.text} border ${t.color.border} font-extrabold text-xs px-2 py-0.5 rounded-md shadow-sm">
+            ${t.num}
+          </span>
+        `).join('');
+
+        return `
+          <div class="notch-slot rounded-xl bg-slate-50 border border-slate-200 p-2 flex flex-col items-center justify-start min-h-[3.75rem] sm:min-h-[4.25rem]">
+            <span class="text-[10px] font-bold text-slate-500 mb-1">${labels[idx]}</span>
+            <div class="flex flex-wrap items-center justify-center gap-1">
+              ${tilesHtml || '<span class="text-[11px] text-slate-300">—</span>'}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderDeductionGrid() {
+      const container = document.getElementById('deductionGrid');
+      const cells = [];
+
+      for (let n = 1; n <= 60; n++) {
+        const t = getTileMeta(n);
+        const mark = state.scratchpad[n] || 0;
+        const extraClass = mark === 1 ? 'crossed-out' : (mark === 2 ? 'circled-cell' : '');
+
+        cells.push(`
+          <button type="button" data-scratch-num="${n}"
+            class="scratch-cell ${t.color.bg} ${t.color.text} border ${t.color.border} ${extraClass} rounded-lg py-2 sm:py-1.5 px-1 flex flex-col items-center justify-center font-extrabold shadow-sm min-h-[2.6rem]">
+            <span class="text-sm leading-none">${n}</span>
+            <span class="text-[10px] leading-none mt-0.5 opacity-90">${t.dotsStr}</span>
+          </button>
+        `);
+      }
+
+      container.innerHTML = cells.join('');
+      container.querySelectorAll('.scratch-cell').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const num = parseInt(btn.getAttribute('data-scratch-num'), 10);
+          toggleScratchCell(num);
+        });
+      });
+    }
+
+    function renderClueLog() {
+      const logEl = document.getElementById('clueLog');
+      document.getElementById('clueCountLabel').textContent = `${state.clueLog.length} event${state.clueLog.length === 1 ? '' : 's'}`;
+      if (state.clueLog.length === 0) {
+        logEl.innerHTML = `<p class="text-slate-400 italic">No clues asked yet. Flip a supply tile to start!</p>`;
+        return;
+      }
+      logEl.innerHTML = state.clueLog.map(entry => `
+        <div class="py-1 border-b border-slate-200 last:border-none">${entry}</div>
+      `).join('');
+    }
+
+    // =========================================================================
+    // 10. "GOT FIVE!" FINAL DECLARATION MODAL
+    // =========================================================================
+    function openDeclareModal() {
+      const modal = document.getElementById('declareModal');
+      const inputsContainer = document.getElementById('guessInputsContainer');
+      const feedback = document.getElementById('guessFeedback');
+      feedback.classList.add('hidden');
+
+      inputsContainer.innerHTML = state.playerTiles.map((t, idx) => `
+        <div class="flex flex-col items-center space-y-1">
+          <span class="text-[11px] sm:text-xs font-bold text-slate-700">#${idx + 1} (${t.color.name})</span>
+          <input type="number" inputmode="numeric" min="1" max="60" id="guessInput_${idx}"
+            placeholder="1-60"
+            class="w-full text-center font-extrabold text-base py-2 rounded-xl bg-slate-50 border-2 ${t.color.border} text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        </div>
+      `).join('');
+
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeDeclareModal() {
+      const modal = document.getElementById('declareModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function verifyFinalGuess() {
+      const guesses = [];
+      for (let i = 0; i < 5; i++) {
+        const val = parseInt(document.getElementById(`guessInput_${i}`).value, 10);
+        guesses.push(val);
+      }
+
+      const feedback = document.getElementById('guessFeedback');
+      feedback.classList.remove('hidden');
+
+      if (guesses.some(g => isNaN(g) || g < 1 || g > 60)) {
+        feedback.className = 'p-3 rounded-xl text-xs sm:text-sm font-semibold bg-amber-50 text-amber-900 border border-amber-300';
+        feedback.textContent = 'Please enter a valid number between 1 and 60 for all 5 slots!';
+        return;
+      }
+
+      const actual = state.playerTiles.map(t => t.num);
+      const allCorrect = guesses.every((g, idx) => g === actual[idx]);
+
+      state.gameRevealed = true;
+      state.phase = 'GAMEOVER';
+      broadcastStateToPeers();
+      renderAll();
+
+      if (allCorrect) {
+        playSound('win');
+        feedback.className = 'p-3 rounded-xl text-xs sm:text-sm font-bold bg-emerald-50 text-emerald-900 border border-emerald-400';
+        feedback.innerHTML = `🎉 <strong>GOT FIVE! YOU WIN!</strong> (${myPlayerId}) deduced all 5 numbers (${actual.join(', ')}) in ${state.turn} turns!`;
+      } else {
+        playSound('lose');
+        feedback.className = 'p-3 rounded-xl text-xs sm:text-sm font-bold bg-rose-50 text-rose-900 border border-rose-400';
+        feedback.innerHTML = `💥 <strong>Oh no! Not quite right!</strong> Your actual 5 hidden numbers were <strong>${actual.join(', ')}</strong> (you guessed ${guesses.join(', ')}).`;
+      }
+    }
+
+    // =========================================================================
+    // 11. MOBILE/TABLET VIEW SWITCHER & CONTROLS WIRING
+    // =========================================================================
+    function setMobileViewTab(tabName) {
+      const lobbyPanel = document.getElementById('lobbyPanel');
+      const tableColumn = document.getElementById('tableColumn');
+      const sheetColumn = document.getElementById('sheetColumn');
+
+      document.querySelectorAll('.mobile-view-btn').forEach(btn => {
+        const active = btn.getAttribute('data-mobile-tab') === tabName;
+        btn.className = active
+          ? 'mobile-view-btn py-2 px-2 rounded-xl text-xs font-extrabold bg-indigo-600 text-white transition'
+          : 'mobile-view-btn py-2 px-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition';
+      });
+
+      if (tabName === 'all') {
+        lobbyPanel.classList.remove('hidden');
+        tableColumn.classList.remove('hidden');
+        sheetColumn.classList.remove('hidden');
+      } else if (tabName === 'table') {
+        lobbyPanel.classList.add('hidden');
+        tableColumn.classList.remove('hidden');
+        sheetColumn.classList.add('hidden');
+      } else if (tabName === 'sheet') {
+        lobbyPanel.classList.add('hidden');
+        tableColumn.classList.add('hidden');
+        sheetColumn.classList.remove('hidden');
+      } else if (tabName === 'lobby') {
+        lobbyPanel.classList.remove('hidden');
+        document.getElementById('lobbyBody').classList.remove('hidden');
+        tableColumn.classList.add('hidden');
+        sheetColumn.classList.add('hidden');
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initPlayerIdentity();
+
+      document.getElementById('btnRegenId').addEventListener('click', regeneratePlayerIdentity);
+      document.getElementById('btnNewGame').addEventListener('click', () => initGame(state.roomCode));
+      document.getElementById('btnCreateRoom').addEventListener('click', createMultiplayerRoom);
+      document.getElementById('btnJoinRoom').addEventListener('click', () => joinMultiplayerRoom());
+
+      document.getElementById('btnCopyRoom').addEventListener('click', () => {
+        const code = state.roomCode;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(code);
+          }
+        } catch (e) {}
+        document.getElementById('btnCopyRoom').textContent = 'Copied!';
+        setTimeout(() => { document.getElementById('btnCopyRoom').textContent = 'Copy'; }, 1200);
+      });
+
+      document.getElementById('btnShareInvite').addEventListener('click', () => {
+        if (state.roomCode === 'LOCAL-SOLO') {
+          createMultiplayerRoom();
+        }
+        const shareUrl = `${window.location.origin}${window.location.pathname}?room=${state.roomCode}`;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(shareUrl);
+          }
+        } catch (e) {}
+        document.getElementById('roomCreatedFeedback').textContent = `🔗 Invite link copied for Room ${state.roomCode}!`;
+      });
+
+      document.querySelectorAll('.mobile-view-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          setMobileViewTab(btn.getAttribute('data-mobile-tab'));
+        });
+      });
+
+      const lobbyPanel = document.getElementById('lobbyPanel');
+      const lobbyBody = document.getElementById('lobbyBody');
+      const btnToggleLobby = document.getElementById('btnToggleLobby');
+      btnToggleLobby.addEventListener('click', () => {
+        const hidden = lobbyBody.classList.toggle('hidden');
+        btnToggleLobby.textContent = hidden ? 'Show Lobby ▼' : 'Hide Lobby ▲';
+      });
+      document.getElementById('btnOpenLobby').addEventListener('click', () => {
+        setMobileViewTab('all');
+        lobbyPanel.scrollIntoView({ behavior: 'smooth' });
+        lobbyBody.classList.remove('hidden');
+        btnToggleLobby.textContent = 'Hide Lobby ▲';
+      });
+
+      document.getElementById('btnPauseTimer').addEventListener('click', () => {
+        state.timerPaused = !state.timerPaused;
+        document.getElementById('btnPauseTimer').textContent = state.timerPaused ? '▶️' : '⏸️';
+      });
+
+      document.getElementById('btnMute').addEventListener('click', () => {
+        isMuted = !isMuted;
+        document.getElementById('muteIcon').textContent = isMuted ? '🔇' : '🔊';
+        document.getElementById('muteLabel').textContent = isMuted ? 'Muted' : 'Sound On';
+      });
+
+      document.getElementById('btnSortClue').addEventListener('click', handleSortClue);
+
+      document.getElementById('btnCompareMode').addEventListener('click', () => {
+        if (!isMyTurn() || state.phase !== 'CLUE' || !state.selectedPoolNum) return;
+        state.compareSubMode = !state.compareSubMode;
+        renderClueControls();
+      });
+
+      document.querySelectorAll('.compare-slot-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const slotIdx = parseInt(btn.getAttribute('data-compare-slot'), 10);
+          handleCompareClue(slotIdx);
+        });
+      });
+
+      document.getElementById('btnAutoCrossPublic').addEventListener('click', autoCrossVisibleTiles);
+      document.getElementById('btnSmartHint').addEventListener('click', runSmartAutoDeduce);
+
+      document.getElementById('btnClearBoard').addEventListener('click', () => {
+        state.scratchpad = {};
+        playSound('mark');
+        renderDeductionGrid();
+      });
+
+      // Declare Modal controls
+      document.getElementById('btnDeclareModal').addEventListener('click', openDeclareModal);
+      document.getElementById('btnCloseDeclare').addEventListener('click', closeDeclareModal);
+      document.getElementById('btnCancelDeclare').addEventListener('click', closeDeclareModal);
+      document.getElementById('btnSubmitGuess').addEventListener('click', verifyFinalGuess);
+
+      // Rules Modal controls
+      const rulesModal = document.getElementById('rulesModal');
+      const closeRules = () => {
+        rulesModal.classList.add('hidden');
+        rulesModal.classList.remove('flex');
+      };
+      document.getElementById('btnRules').addEventListener('click', () => {
+        rulesModal.classList.remove('hidden');
+        rulesModal.classList.add('flex');
+      });
+      document.getElementById('btnCloseRules').addEventListener('click', closeRules);
+      document.getElementById('btnGotItRules').addEventListener('click', closeRules);
+
+      // Auto-join room if ?room=G5-XXXX is in the URL (ideal for GitHub Pages invite links!)
+      const params = new URLSearchParams(window.location.search);
+      const urlRoom = params.get('room');
+      initGame('LOCAL-SOLO');
+      if (urlRoom) {
+        joinMultiplayerRoom(urlRoom);
+      }
+    });
+  </script>
+</body>
+</html>
